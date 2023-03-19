@@ -4,17 +4,13 @@ use argon2::{
     Argon2,
 };
 use axum::extract::{OriginalUri, Path, State};
-use axum::response::{Html, IntoResponse, Redirect};
+use axum::response::{IntoResponse, Redirect};
 use axum::{extract, http::StatusCode, Json};
-use axum_macros;
-use bytes::Bytes;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use http::uri::Uri;
-use log;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use regex::Regex;
-use rusqlite;
 use rusqlite::{params, Result};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -70,19 +66,6 @@ impl Default for AkaInput {
             key: "".to_string(),
         }
     }
-}
-
-#[axum_macros::debug_handler]
-pub async fn get_icon() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        axum::response::AppendHeaders([(axum::http::header::CONTENT_TYPE, "image/x-icon")]),
-        Bytes::from_static(include_bytes!("../assets/favicon.ico")),
-    )
-}
-
-pub async fn index() -> impl IntoResponse {
-    (StatusCode::OK, Html(include_str!("../assets/index.html")))
 }
 
 fn sqlite_to_datetime(date: String) -> DateTime<Utc> {
@@ -190,7 +173,6 @@ pub fn extract_aka_url(original_uri: Uri, path: String) -> Result<String> {
     Ok(decode(result.as_str()).expect("UTF-8").to_string())
 }
 
-// flexy_logger
 pub async fn redirect_aka(
     State(conn): State<Connection>,
     Path(path): Path<String>,
@@ -221,14 +203,6 @@ pub async fn redirect_info_aka(
         Err(e) => default_error_response(e),
     }
 }
-
-pub async fn handler_404(OriginalUri(original_uri): OriginalUri) -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Html(format!("404 {} Not Found", original_uri)),
-    )
-}
-
 //
 // let parsed_hash = PasswordHash::new(&password_hash)?;
 // assert!(Argon2::default().verify_password(password, &parsed_hash).is_ok());
@@ -237,19 +211,15 @@ pub async fn random_available_url(conn: &Connection) -> String {
         .map(|_| rand::thread_rng().sample(Alphanumeric) as char)
         .collect();
 
-    while find_aka_link(&conn, result.to_string()).await.is_ok() {
-        result = format!(
-            "{}{}",
-            result.to_string(),
-            rand::thread_rng().sample(Alphanumeric)
-        );
+    while find_aka_link(conn, result.to_string()).await.is_ok() {
+        result = format!("{}{}", result, rand::thread_rng().sample(Alphanumeric));
     }
     result
 }
 
-fn check_in(in_url: &String) -> String {
+fn check_in(in_url: &str) -> String {
     let uri_match = Regex::new(r"[ \.&\?=\[\]{},:\(\)$\*@\+\w\p{L}-]+").unwrap();
-    uri_match.replace_all(in_url.as_str(), "").to_string()
+    uri_match.replace_all(in_url, "").to_string()
 }
 
 // 2394871
@@ -264,7 +234,7 @@ pub async fn create_aka(
 
     let mut expire: i64 = DEFAULT_EXPIRE;
     let mut password_hash = "".to_string();
-    if aka_inp.key != "" {
+    if !aka_inp.key.is_empty() {
         expire = aka_inp.expire_hours;
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -274,12 +244,12 @@ pub async fn create_aka(
             .to_string();
     }
     let mut in_url = aka_inp.r#in;
-    if in_url == "" {
+    if in_url.is_empty() {
         in_url = random_available_url(&conn).await;
     }
 
     let invalid_characters = check_in(&in_url);
-    if invalid_characters != "" {
+    if !invalid_characters.is_empty() {
         // Doesn't pass the required standard
         return (
             StatusCode::BAD_REQUEST,
@@ -290,7 +260,7 @@ pub async fn create_aka(
         );
     }
 
-    if aka_inp.out == "" {
+    if aka_inp.out.is_empty() {
         // Doesn't pass the required standard
         return (
             StatusCode::BAD_REQUEST,
