@@ -89,7 +89,7 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
             let mut stmt = conn
                 .prepare("SELECT id, created_at, expire_at, user, \"in\", out, \"key\" FROM Aka")
                 .unwrap();
-            let people = stmt
+            let people: Result<Vec<Aka>, rusqlite::Error> = stmt
                 .query_map([], |row| {
                     Ok(Aka {
                         id: row.get(0).unwrap(),
@@ -98,12 +98,11 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
                         user: row.get(3)?,
                         r#in: row.get(4)?,
                         out: row.get(5)?,
-                        key: row.get(6)?,
-                        ..Aka::default()
+                        key: row.get(6)?
                     })
                 })
                 .unwrap()
-                .collect::<Result<Vec<Aka>, rusqlite::Error>>();
+                .collect();
             people
         })
         .await
@@ -137,12 +136,12 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
 /// 
 /// # Example
 /// ```rust
-/// let the_short = find_aka_link(&conn, "PSdBK");
+/// find_aka_link(&conn, "PSdBK");
 /// ```
 /// 
 pub async fn find_aka_link(conn: &Connection, in_url: String) -> Result<Aka> {
     match conn
-        .call(|conn| {
+        .call(|conn| -> Result<Aka, rusqlite::Error> {
             conn.query_row(
                	"SELECT id, created_at, expire_at, user, \"in\", out, \"key\" FROM Aka WHERE \"in\" = ?1",
 				[in_url],
@@ -153,8 +152,7 @@ pub async fn find_aka_link(conn: &Connection, in_url: String) -> Result<Aka> {
                       user: row.get(3)?,
                       r#in: row.get(4)?,
                       out: row.get(5)?,
-                      key: row.get(6)?,
-					..Aka::default()
+                      key: row.get(6)?
 				})
            	) as Result<Aka>
        	}).await {
@@ -167,10 +165,10 @@ pub fn default_error_response(e: rusqlite::Error) -> (StatusCode, Json<Value>) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({
-        "status": "error",
-        "error": 500,
-        "message": format!("500 {}", e),
-        "v" : VERSION
+            "status": "error",
+            "error": 500,
+            "message": format!("500 {}", e),
+            "v" : VERSION
         })),
     )
 }
@@ -181,7 +179,7 @@ pub fn extract_aka_url(original_uri: Uri, path: String) -> Result<String> {
         result = format!("{}?{}", result, original_uri.query().unwrap());
     }
     result = result
-        .strip_prefix("/")
+        .strip_prefix('/')
         .unwrap_or(result.as_str())
         .to_string();
 
@@ -212,10 +210,13 @@ pub async fn redirect_info_aka(
 
     log::info!("{:?}", uri);
     match find_aka_link(&conn, uri).await {
-        Ok(aka_list) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(aka_list).unwrap()),
-        ),
+        Ok(aka_list) => {
+            let export_data =  json!({
+                "in": aka_list.r#in,
+                "out": aka_list.out
+            });
+            (StatusCode::OK, Json(export_data))
+        },
         Err(e) => default_error_response(e),
     }
 }
@@ -259,7 +260,6 @@ pub async fn create_aka(
     State(conn): State<Connection>,
     extract::Json(data): extract::Json<Value>,
 ) -> impl IntoResponse {
-    //(StatusCode::OK, Json(json!({"message": ok.get(0).unwrap()})))
     let aka_inp: AkaInput = serde_json::from_value(data).unwrap();
 
     let mut expire: i64 = DEFAULT_EXPIRE;
