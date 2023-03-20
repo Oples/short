@@ -42,10 +42,12 @@ async fn main() -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
+#[axum::debug_handler]
 pub async fn index() -> impl IntoResponse {
     (StatusCode::OK, Html(include_str!("../assets/index.html")))
 }
 
+#[axum::debug_handler]
 pub async fn handler_404(OriginalUri(original_uri): OriginalUri) -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
@@ -53,7 +55,7 @@ pub async fn handler_404(OriginalUri(original_uri): OriginalUri) -> impl IntoRes
     )
 }
 
-#[axum_macros::debug_handler]
+#[axum::debug_handler]
 pub async fn get_icon() -> impl IntoResponse {
     (
         StatusCode::OK,

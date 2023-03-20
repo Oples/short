@@ -68,13 +68,21 @@ impl Default for AkaInput {
     }
 }
 
-fn sqlite_to_datetime(date: String) -> DateTime<Utc> {
+/// Convert from a sqlite date value to a Rust DateTime<Utc> value
+/// 
+/// # Example
+/// ```
+/// # use chrono::{DateTime, Utc};
+/// let datTime = sqlite_to_datetime("2023-03-19 20:00:33.124 UTC");
+/// ```
+pub fn sqlite_to_datetime(date: String) -> DateTime<Utc> {
     DateTime::<Utc>::from_utc(
         NaiveDateTime::parse_from_str(date.as_str(), "%Y-%m-%d %H:%M:%S%.f UTC").unwrap(),
         Utc,
     )
 }
 
+#[axum::debug_handler]
 pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
     match conn
         .call(|conn| {
@@ -125,6 +133,13 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
     }
 }
 
+/// Find the link info (Aka) from an id key
+/// 
+/// # Example
+/// ```rust
+/// let the_short = find_aka_link(&conn, "PSdBK");
+/// ```
+/// 
 pub async fn find_aka_link(conn: &Connection, in_url: String) -> Result<Aka> {
     match conn
         .call(|conn| {
@@ -144,7 +159,7 @@ pub async fn find_aka_link(conn: &Connection, in_url: String) -> Result<Aka> {
            	) as Result<Aka>
        	}).await {
          	Ok(res) => Ok(res),
-         	Err(e) => return Err(e),
+         	Err(e) => Err(e),
        	}
 }
 
@@ -161,7 +176,7 @@ pub fn default_error_response(e: rusqlite::Error) -> (StatusCode, Json<Value>) {
 }
 
 pub fn extract_aka_url(original_uri: Uri, path: String) -> Result<String> {
-    let mut result = path.to_owned();
+    let mut result = path;
     if original_uri.query().is_some() {
         result = format!("{}?{}", result, original_uri.query().unwrap());
     }
@@ -173,6 +188,7 @@ pub fn extract_aka_url(original_uri: Uri, path: String) -> Result<String> {
     Ok(decode(result.as_str()).expect("UTF-8").to_string())
 }
 
+#[axum::debug_handler]
 pub async fn redirect_aka(
     State(conn): State<Connection>,
     Path(path): Path<String>,
@@ -203,7 +219,7 @@ pub async fn redirect_info_aka(
         Err(e) => default_error_response(e),
     }
 }
-//
+
 // let parsed_hash = PasswordHash::new(&password_hash)?;
 // assert!(Argon2::default().verify_password(password, &parsed_hash).is_ok());
 pub async fn random_available_url(conn: &Connection) -> String {
@@ -217,14 +233,28 @@ pub async fn random_available_url(conn: &Connection) -> String {
     result
 }
 
-fn check_in(in_url: &str) -> String {
+/// Check for valid input short url and replace invalid chars?
+pub fn check_in(in_url: &str) -> String {
     let uri_match = Regex::new(r"[ \.&\?=\[\]{},:\(\)$\*@\+\w\p{L}-]+").unwrap();
     uri_match.replace_all(in_url, "").to_string()
 }
 
 // 2394871
 // 461509
-#[axum_macros::debug_handler]
+/// Insert an Aka in the database given a POST Json request
+/// # Example
+/// ```http
+/// POST http://localhost/ HTTP/1.1
+/// Accept: */*
+/// Content-Type: application/json
+/// 
+/// {
+///   "user": "UUID",
+///   "in": "",
+///   "out": "https://example.com"
+/// }
+/// ```
+#[axum::debug_handler]
 pub async fn create_aka(
     State(conn): State<Connection>,
     extract::Json(data): extract::Json<Value>,
