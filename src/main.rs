@@ -6,7 +6,7 @@ use axum::{
 };
 use bytes::Bytes;
 use http::StatusCode;
-use std::{net::SocketAddr};
+use std::net::SocketAddr;
 use tokio_rusqlite::Connection;
 use tower::limit::concurrency::ConcurrencyLimitLayer;
 use tower_http::cors::CorsLayer;
@@ -17,6 +17,7 @@ use crate::aka::constants::*;
 #[tokio::main]
 async fn main() -> Result<(), rusqlite::Error> {
     env_logger::init();
+
     let conn = Connection::open("sqlite.db").await?;
 
     let app = Router::new()

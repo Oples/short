@@ -69,7 +69,7 @@ impl Default for AkaInput {
 }
 
 /// Convert from a sqlite date value to a Rust DateTime<Utc> value
-/// 
+///
 /// # Example
 /// ```
 /// # use chrono::{DateTime, Utc};
@@ -98,7 +98,7 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
                         user: row.get(3)?,
                         r#in: row.get(4)?,
                         out: row.get(5)?,
-                        key: row.get(6)?
+                        key: row.get(6)?,
                     })
                 })
                 .unwrap()
@@ -133,12 +133,12 @@ pub async fn list(State(conn): State<Connection>) -> impl IntoResponse {
 }
 
 /// Find the link info (Aka) from an id key
-/// 
+///
 /// # Example
 /// ```rust
 /// find_aka_link(&conn, "PSdBK");
 /// ```
-/// 
+///
 pub async fn find_aka_link(conn: &Connection, in_url: String) -> Result<Aka> {
     match conn
         .call(|conn| -> Result<Aka, rusqlite::Error> {
@@ -208,7 +208,7 @@ pub async fn redirect_info_aka(
     State(conn): State<Connection>,
     Path(path): Path<String>,
     OriginalUri(original_uri): OriginalUri,
-    extract::Json(data): extract::Json<Value>
+    extract::Json(data): extract::Json<Value>,
 ) -> impl IntoResponse {
     let uri = extract_aka_url(original_uri, path).unwrap();
 
@@ -224,23 +224,35 @@ pub async fn redirect_info_aka(
             if key_obj.is_some() {
                 let user_key = key_obj.unwrap().as_str().unwrap();
                 if aka_info.key.is_empty() {
-                    return (StatusCode::BAD_REQUEST, Json(json!({"error": "url is anonymous and has no password"})))
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "url is anonymous and has no password"})),
+                    );
                 }
                 let parsed_hash = PasswordHash::new(&aka_info.key).unwrap();
-                if Argon2::default().verify_password(user_key.as_bytes(), &parsed_hash).is_ok() {
+                if Argon2::default()
+                    .verify_password(user_key.as_bytes(), &parsed_hash)
+                    .is_ok()
+                {
                     // Validation successful
-                    return (StatusCode::OK, Json(serde_json::to_value(aka_info).unwrap()));
+                    return (
+                        StatusCode::OK,
+                        Json(serde_json::to_value(aka_info).unwrap()),
+                    );
                 } else {
-                    return (StatusCode::FORBIDDEN, Json(json!({"error": "Wrong password"})));
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({"error": "Wrong password"})),
+                    );
                 }
             }
 
-            let export_data =  json!({
+            let export_data = json!({
                 "in": aka_info.r#in,
                 "out": aka_info.out
             });
             (StatusCode::OK, Json(export_data))
-        },
+        }
         Err(e) => default_error_response(e),
     }
 }
@@ -269,7 +281,7 @@ pub fn check_in(in_url: &str) -> String {
 /// POST http://localhost/ HTTP/1.1
 /// Accept: */*
 /// Content-Type: application/json
-/// 
+///
 /// {
 ///   "user": "UUID",
 ///   "in": "",
