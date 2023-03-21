@@ -1,7 +1,7 @@
 use crate::aka::constants::*;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-    Argon2,
+    Argon2, PasswordHash, PasswordVerifier,
 };
 use axum::extract::{OriginalUri, Path, State};
 use axum::response::{IntoResponse, Redirect};
@@ -194,26 +194,50 @@ pub async fn redirect_aka(
 ) -> impl IntoResponse {
     let uri = extract_aka_url(original_uri, path).unwrap();
 
-    log::info!("{:?}", uri);
+    // logging
+    log::info!("Redirecting for {:?}", uri);
+
     match find_aka_link(&conn, uri).await {
         Ok(aka) => Redirect::temporary(aka.out.as_str()).into_response(),
         Err(e) => default_error_response(e).into_response(),
     }
 }
 
+/// Retrieve info for the shortcut (Aka)
 pub async fn redirect_info_aka(
     State(conn): State<Connection>,
     Path(path): Path<String>,
     OriginalUri(original_uri): OriginalUri,
+    extract::Json(data): extract::Json<Value>
 ) -> impl IntoResponse {
     let uri = extract_aka_url(original_uri, path).unwrap();
 
-    log::info!("{:?}", uri);
+    // Logging
+    log::info!(":: Getting info for {:?}", uri);
+    log::info!(":: Body message");
+    log::info!("{}", data);
+
     match find_aka_link(&conn, uri).await {
-        Ok(aka_list) => {
+        Ok(aka_info) => {
+            let key_obj = data.get("key");
+
+            if key_obj.is_some() {
+                let user_key = key_obj.unwrap().as_str().unwrap();
+                if aka_info.key.is_empty() {
+                    return (StatusCode::BAD_REQUEST, Json(json!({"error": "url is anonymous and has no password"})))
+                }
+                let parsed_hash = PasswordHash::new(&aka_info.key).unwrap();
+                if Argon2::default().verify_password(user_key.as_bytes(), &parsed_hash).is_ok() {
+                    // Validation successful
+                    return (StatusCode::OK, Json(serde_json::to_value(aka_info).unwrap()));
+                } else {
+                    return (StatusCode::FORBIDDEN, Json(json!({"error": "Wrong password"})));
+                }
+            }
+
             let export_data =  json!({
-                "in": aka_list.r#in,
-                "out": aka_list.out
+                "in": aka_info.r#in,
+                "out": aka_info.out
             });
             (StatusCode::OK, Json(export_data))
         },
@@ -221,8 +245,7 @@ pub async fn redirect_info_aka(
     }
 }
 
-// let parsed_hash = PasswordHash::new(&password_hash)?;
-// assert!(Argon2::default().verify_password(password, &parsed_hash).is_ok());
+/// Find an available Short url
 pub async fn random_available_url(conn: &Connection) -> String {
     let mut result: String = (0..5)
         .map(|_| rand::thread_rng().sample(Alphanumeric) as char)
@@ -240,8 +263,6 @@ pub fn check_in(in_url: &str) -> String {
     uri_match.replace_all(in_url, "").to_string()
 }
 
-// 2394871
-// 461509
 /// Insert an Aka in the database given a POST Json request
 /// # Example
 /// ```http

@@ -16,6 +16,7 @@ use crate::aka::constants::*;
 
 #[tokio::main]
 async fn main() -> Result<(), rusqlite::Error> {
+    env_logger::init();
     let conn = Connection::open("sqlite.db").await?;
 
     let app = Router::new()
