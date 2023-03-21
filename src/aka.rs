@@ -5,7 +5,7 @@ use argon2::{
 };
 use axum::extract::{OriginalUri, Path, State};
 use axum::response::{IntoResponse, Redirect};
-use axum::{extract, http::StatusCode, Json};
+use axum::{http::StatusCode, Json};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use http::uri::Uri;
 use rand::distributions::Alphanumeric;
@@ -208,42 +208,47 @@ pub async fn redirect_info_aka(
     State(conn): State<Connection>,
     Path(path): Path<String>,
     OriginalUri(original_uri): OriginalUri,
-    extract::Json(data): extract::Json<Value>,
+    data: Option<Json<Value>>,
 ) -> impl IntoResponse {
     let uri = extract_aka_url(original_uri, path).unwrap();
 
     // Logging
     log::info!(":: Getting info for {:?}", uri);
-    log::info!(":: Body message");
-    log::info!("{}", data);
+    if data.is_some() {
+        log::info!(":: Body message");
+        log::info!("{}", data.to_owned().unwrap().to_string());
+    }
 
     match find_aka_link(&conn, uri).await {
         Ok(aka_info) => {
-            let key_obj = data.get("key");
+            if data.is_some() {
+                let json_data = data.unwrap();
+                let key_obj = json_data.get("key");
 
-            if key_obj.is_some() {
-                let user_key = key_obj.unwrap().as_str().unwrap();
-                if aka_info.key.is_empty() {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({"error": "url is anonymous and has no password"})),
-                    );
-                }
-                let parsed_hash = PasswordHash::new(&aka_info.key).unwrap();
-                if Argon2::default()
-                    .verify_password(user_key.as_bytes(), &parsed_hash)
-                    .is_ok()
-                {
-                    // Validation successful
-                    return (
-                        StatusCode::OK,
-                        Json(serde_json::to_value(aka_info).unwrap()),
-                    );
-                } else {
-                    return (
-                        StatusCode::FORBIDDEN,
-                        Json(json!({"error": "Wrong password"})),
-                    );
+                if key_obj.is_some() {
+                    let user_key = key_obj.unwrap().as_str().unwrap();
+                    if aka_info.key.is_empty() {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"error": "url is anonymous and has no password"})),
+                        );
+                    }
+                    let parsed_hash = PasswordHash::new(&aka_info.key).unwrap();
+                    if Argon2::default()
+                        .verify_password(user_key.as_bytes(), &parsed_hash)
+                        .is_ok()
+                    {
+                        // Validation successful
+                        return (
+                            StatusCode::OK,
+                            Json(serde_json::to_value(aka_info).unwrap()),
+                        );
+                    } else {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            Json(json!({"error": "Wrong password"})),
+                        );
+                    }
                 }
             }
 
@@ -291,7 +296,7 @@ pub fn check_in(in_url: &str) -> String {
 #[axum::debug_handler]
 pub async fn create_aka(
     State(conn): State<Connection>,
-    extract::Json(data): extract::Json<Value>,
+    Json(data): Json<Value>,
 ) -> impl IntoResponse {
     let aka_inp: AkaInput = serde_json::from_value(data).unwrap();
 
