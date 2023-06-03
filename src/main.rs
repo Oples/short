@@ -6,10 +6,10 @@ use axum::{
 };
 use bytes::Bytes;
 use http::StatusCode;
-use std::net::SocketAddr;
+use std::{net::SocketAddr};
 use tokio_rusqlite::Connection;
-use tower::limit::concurrency::ConcurrencyLimitLayer;
-use tower_http::cors::CorsLayer;
+use tower::{limit::concurrency::ConcurrencyLimitLayer, ServiceBuilder};
+use tower_http::{cors::CorsLayer, compression::CompressionLayer};
 
 mod aka;
 use crate::aka::constants::*;
@@ -27,8 +27,12 @@ async fn main() -> Result<(), rusqlite::Error> {
         .route("/list/", get(aka::list))
         .route("/:aka", get(aka::redirect_aka))
         .fallback(handler_404)
-        .layer(ConcurrencyLimitLayer::new(64))
-        .layer(CorsLayer::permissive())
+        .layer(
+            ServiceBuilder::new()
+                .layer(ConcurrencyLimitLayer::new(64))
+                .layer(CompressionLayer::new())
+                .layer(CorsLayer::permissive())
+        )
         .with_state(conn);
 
     // run it
